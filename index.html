@@ -64,7 +64,7 @@
 <div class="app">
   <header>
     <div class="brand"><h1>StudyTime</h1><p>把讀書時間累積成看得見的進步</p></div>
-    <div class="badge">V1.3</div>
+    <div class="badge">V1.3.1</div>
   </header>
 
   <main id="timerView">
@@ -204,12 +204,12 @@ function initSelects(){
 }
 function renderTimer(){
   const running=!!state.running;
-  const selected=running?state.running.subject:$('#subjectSelect').value;
-  $('#timer').textContent=fmt(todaySubjectTotal(selected));
+  const selected=$('#subjectSelect').value;
+  $('#timer').textContent=fmt(todayTotal());
   $('#startBtn').textContent=running?'暫停':'開始讀書';
-  $('#subjectSelect').disabled=running;
-  if(running) $('#subjectSelect').value=state.running.subject;
-  $('#timerHint').textContent=running?`今天 ${selected} 已累積 · 正在計時`:`今天 ${selected} 已累積 · 按開始繼續`;
+  $('#subjectSelect').disabled=false;
+  if(running && $('#subjectSelect').value!==state.running.subject) $('#subjectSelect').value=state.running.subject;
+  $('#timerHint').textContent=running?`今日總時間 · 正在讀 ${state.running.subject}`:`今日總時間 · 目前選擇 ${selected}`;
   $('#todayTotal').textContent=short(todayTotal()); $('#allTotal').textContent=short(allTotal());
 }
 function renderSubjects(){
@@ -241,7 +241,15 @@ $('#startBtn').onclick=()=>{
   else {splitAndCommitRunning();}
   save();render();
 };
-$('#subjectSelect').addEventListener('change',renderTimer);
+$('#subjectSelect').addEventListener('change',()=>{
+  const next=$('#subjectSelect').value;
+  if(state.running && next!==state.running.subject){
+    splitAndCommitRunning();
+    state.running={subject:next,startedAt:Date.now()};
+    save();
+  }
+  render();
+});
 
 function openGoal(){ $('#goalDialog').showModal(); }
 $('#addGoalBtn').onclick=openGoal; $('#addGoalBtn2').onclick=openGoal; $('#cancelGoal').onclick=()=>$('#goalDialog').close();
