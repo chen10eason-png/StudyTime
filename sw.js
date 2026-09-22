@@ -1,4 +1,4 @@
-const CACHE = 'studytime-v1.1.1';
+const CACHE = 'studytime-v1.2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest'];
 
 self.addEventListener('install', event => {
