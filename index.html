@@ -64,7 +64,7 @@
 <div class="app">
   <header>
     <div class="brand"><h1>StudyTime</h1><p>把讀書時間累積成看得見的進步</p></div>
-    <div class="badge">V1.2</div>
+    <div class="badge">V1.3</div>
   </header>
 
   <main id="timerView">
@@ -76,7 +76,6 @@
         <div class="current" id="timerHint">按開始後就會累計到所選科目</div>
         <div class="actions">
           <button class="btn primary" id="startBtn">開始讀書</button>
-          <button class="btn light hidden" id="finishBtn">完成本次</button>
         </div>
       </div>
     </section>
@@ -158,21 +157,59 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 function save(){localStorage.setItem(KEY,JSON.stringify(state));}
 function fmt(sec){sec=Math.max(0,Math.floor(sec));const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':');}
 function short(sec){ if(sec<3600) return `${Math.floor(sec/60)} 分鐘`; const h=sec/3600; return `${h<10?h.toFixed(1):Math.round(h)} 小時`; }
-function todayKey(d=new Date()){return d.toISOString().slice(0,10)}
-function runningElapsed(){return state.running ? Math.floor((Date.now()-state.running.startedAt)/1000) : 0;}
+function todayKey(d=new Date()){return dateLocalKey(d)}
+function runningElapsed(){return state.running ? Math.max(0,Math.floor((Date.now()-state.running.startedAt)/1000)) : 0;}
 function totalForSubject(subj){return (state.totals[subj]||0) + (state.running?.subject===subj ? runningElapsed():0)}
-function todayTotal(){const t=todayKey();let sum=state.sessions.filter(x=>x.date===t).reduce((a,b)=>a+b.seconds,0);if(state.running && todayKey(new Date(state.running.startedAt))===t) sum+=runningElapsed();return sum;}
+function todaySubjectTotal(subj){
+  const key=todayKey();
+  let sum=state.sessions.filter(x=>x.date===key && x.subject===subj).reduce((a,b)=>a+b.seconds,0);
+  if(state.running?.subject===subj) sum+=runningTodaySeconds();
+  return sum;
+}
+function todayTotal(){
+  const key=todayKey();
+  let sum=state.sessions.filter(x=>x.date===key).reduce((a,b)=>a+b.seconds,0);
+  if(state.running) sum+=runningTodaySeconds();
+  return sum;
+}
 function allTotal(){return Object.values(state.totals).reduce((a,b)=>a+b,0)+runningElapsed();}
+function startOfLocalDayMs(d=new Date()){return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
+function runningTodaySeconds(){
+  if(!state.running)return 0;
+  const start=Math.max(state.running.startedAt,startOfLocalDayMs());
+  return Math.max(0,Math.floor((Date.now()-start)/1000));
+}
+function splitAndCommitRunning(endMs=Date.now()){
+  if(!state.running)return;
+  const subj=state.running.subject;
+  let cursor=state.running.startedAt;
+  while(cursor<endMs){
+    const d=new Date(cursor);
+    const nextMidnight=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1).getTime();
+    const segmentEnd=Math.min(endMs,nextMidnight);
+    const seconds=Math.max(0,Math.floor((segmentEnd-cursor)/1000));
+    if(seconds>0){
+      const date=dateLocalKey(new Date(cursor));
+      state.sessions.push({subject:subj,seconds,date,startedAt:cursor,endedAt:segmentEnd});
+      state.totals[subj]=(state.totals[subj]||0)+seconds;
+    }
+    cursor=segmentEnd;
+  }
+  state.running=null;
+}
 
 function initSelects(){
   ['#subjectSelect','#goalSubject'].forEach(id=>{$(id).innerHTML=subjects.map(([s])=>`<option>${s}</option>`).join('')});
   const tomorrow=new Date(Date.now()+86400000); $('#goalDeadline').value=tomorrow.toISOString().slice(0,10);
 }
 function renderTimer(){
-  const elapsed=runningElapsed(); $('#timer').textContent=fmt(elapsed);
-  const running=!!state.running; $('#startBtn').textContent=running?'暫停':'開始讀書'; $('#finishBtn').classList.toggle('hidden',!running);
-  $('#subjectSelect').disabled=running; if(running) $('#subjectSelect').value=state.running.subject;
-  $('#timerHint').textContent=running?`正在累計：${state.running.subject}`:'按開始後就會累計到所選科目';
+  const running=!!state.running;
+  const selected=running?state.running.subject:$('#subjectSelect').value;
+  $('#timer').textContent=fmt(todaySubjectTotal(selected));
+  $('#startBtn').textContent=running?'暫停':'開始讀書';
+  $('#subjectSelect').disabled=running;
+  if(running) $('#subjectSelect').value=state.running.subject;
+  $('#timerHint').textContent=running?`今天 ${selected} 已累積 · 正在計時`:`今天 ${selected} 已累積 · 按開始繼續`;
   $('#todayTotal').textContent=short(todayTotal()); $('#allTotal').textContent=short(allTotal());
 }
 function renderSubjects(){
@@ -181,7 +218,7 @@ function renderSubjects(){
 }
 function goalProgress(g){
   const after = state.sessions.filter(x=>x.subject===g.subject && x.endedAt>=g.createdAt).reduce((a,b)=>a+b.seconds,0);
-  let cur=after; if(state.running?.subject===g.subject && state.running.startedAt>=g.createdAt)cur+=runningElapsed();
+  let cur=after; if(state.running?.subject===g.subject){const from=Math.max(state.running.startedAt,g.createdAt);if(Date.now()>from)cur+=Math.floor((Date.now()-from)/1000);}
   return cur;
 }
 function goalHTML(g){
@@ -191,7 +228,7 @@ function goalHTML(g){
 }
 function renderGoals(){ const html=state.goals.length?state.goals.map(goalHTML).join(''):'<div class="empty">還沒有目標，可以設定「幾天內要讀幾小時」。</div>'; $('#goalList').innerHTML=html;$('#goalList2').innerHTML=html; }
 function dateLocalKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
-function dailyBySubject(key){const out={};state.sessions.filter(x=>x.date===key).forEach(x=>out[x.subject]=(out[x.subject]||0)+x.seconds);if(state.running && dateLocalKey(new Date(state.running.startedAt))===key)out[state.running.subject]=(out[state.running.subject]||0)+runningElapsed();return out;}
+function dailyBySubject(key){const out={};state.sessions.filter(x=>x.date===key).forEach(x=>out[x.subject]=(out[x.subject]||0)+x.seconds);if(state.running && key===todayKey())out[state.running.subject]=(out[state.running.subject]||0)+runningTodaySeconds();return out;}
 function daySum(key){return Object.values(dailyBySubject(key)).reduce((a,b)=>a+b,0);}
 function dayLabel(sec){if(sec<60)return '<1分';const m=Math.floor(sec/60);if(m<60)return `${m}分`;const h=Math.floor(m/60),r=m%60;return r?`${h}時${r}分`:`${h}小時`;}
 function heat(sec){if(!sec)return '#f7f8fb';const min=sec/60;if(min<30)return '#eef1ff';if(min<60)return '#dce2ff';if(min<120)return '#bdc9ff';if(min<240)return '#91a4fb';return '#667df2';}
@@ -201,11 +238,10 @@ function render(){renderTimer();renderSubjects();renderGoals();renderCalendar();
 
 $('#startBtn').onclick=()=>{
   if(!state.running){state.running={subject:$('#subjectSelect').value,startedAt:Date.now()};}
-  else {commitRunning();}
+  else {splitAndCommitRunning();}
   save();render();
 };
-function commitRunning(){if(!state.running)return; const seconds=runningElapsed(); if(seconds>0){const subj=state.running.subject;state.totals[subj]=(state.totals[subj]||0)+seconds;state.sessions.push({subject:subj,seconds,date:todayKey(new Date(state.running.startedAt)),startedAt:state.running.startedAt,endedAt:Date.now()});} state.running=null;}
-$('#finishBtn').onclick=()=>{commitRunning();save();render();};
+$('#subjectSelect').addEventListener('change',renderTimer);
 
 function openGoal(){ $('#goalDialog').showModal(); }
 $('#addGoalBtn').onclick=openGoal; $('#addGoalBtn2').onclick=openGoal; $('#cancelGoal').onclick=()=>$('#goalDialog').close();
@@ -219,7 +255,20 @@ $('#nextMonth').onclick=()=>{calCursor.setMonth(calCursor.getMonth()+1);renderCa
 $('#closeDay').onclick=()=>$('#dayDialog').close();
 
 $('#todayDate').textContent=new Intl.DateTimeFormat('zh-TW',{month:'numeric',day:'numeric',weekday:'short'}).format(new Date());
-initSelects();render();tick=setInterval(render,1000);
+initSelects();render();
+let lastDayKey=todayKey();
+tick=setInterval(()=>{
+  const nowKey=todayKey();
+  if(nowKey!==lastDayKey && state.running){
+    const subj=state.running.subject;
+    const now=Date.now();
+    splitAndCommitRunning(now);
+    state.running={subject:subj,startedAt:now};
+    save();
+  }
+  lastDayKey=nowKey;
+  render();
+},1000);
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 </script>
 </body>
