@@ -1,0 +1,10 @@
+{
+  "name": "StudyTime 讀書計時",
+  "short_name": "StudyTime",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#f5f7fb",
+  "lang": "zh-Hant",
+  "description": "依科目記錄讀書時間與期限目標的學生讀書計時 App"
+}
