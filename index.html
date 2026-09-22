@@ -29,13 +29,14 @@
     .empty{color:var(--muted);font-size:14px;text-align:center;padding:8px}
     .nav{position:fixed;left:50%;bottom:calc(10px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(520px,calc(100% - 24px));background:rgba(255,255,255,.82);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.75);box-shadow:0 12px 35px rgba(33,45,79,.16);border-radius:22px;padding:8px;display:flex;justify-content:space-around;z-index:10}.nav button{border:0;background:transparent;padding:9px 12px;border-radius:14px;color:#69748c;font-size:12px;font-weight:700}.nav button.active{background:#eef1ff;color:#4f64d8}
     .hidden{display:none!important}
+    .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.cal-head button{border:0;background:#f0f3f9;width:38px;height:38px;border-radius:12px;font-size:18px;color:var(--text)}.cal-title{font-weight:850;font-size:18px}.weekdays,.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.weekdays div{text-align:center;color:var(--muted);font-size:11px;font-weight:800;padding:5px 0}.day{aspect-ratio:.9;border:0;border-radius:13px;padding:6px 3px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:5px;background:#f7f8fb;color:var(--text);font-family:inherit;min-width:0}.day.blank{background:transparent}.day.today{outline:2px solid #6b78ee;outline-offset:-2px}.day .num{font-size:12px;font-weight:800}.day .spent{font-size:9px;font-weight:850;line-height:1.15;text-align:center;white-space:normal}.day.has-time{cursor:pointer}.legend{display:flex;align-items:center;justify-content:flex-end;gap:5px;margin-top:12px;color:var(--muted);font-size:10px}.legend i{width:17px;height:10px;border-radius:4px;display:block}.detail-total{font-size:26px;font-weight:850;margin:3px 0 14px}.detail-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-top:1px solid var(--line)}.detail-row b{font-size:14px}.detail-row span{font-weight:800;font-size:14px}
   </style>
 </head>
 <body>
 <div class="app">
   <header>
     <div class="brand"><h1>StudyTime</h1><p>把讀書時間累積成看得見的進步</p></div>
-    <div class="badge">V1.0</div>
+    <div class="badge">V1.1</div>
   </header>
 
   <main id="timerView">
@@ -73,6 +74,15 @@
     </section>
   </main>
 
+  <main id="calendarView" class="hidden">
+    <section class="card">
+      <div class="cal-head"><button id="prevMonth" aria-label="上個月">‹</button><div class="cal-title" id="calTitle"></div><button id="nextMonth" aria-label="下個月">›</button></div>
+      <div class="weekdays"><div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div></div>
+      <div class="calendar" id="calendar"></div>
+      <div class="legend"><span>少</span><i style="background:#eef1ff"></i><i style="background:#dce2ff"></i><i style="background:#bdc9ff"></i><i style="background:#91a4fb"></i><i style="background:#667df2"></i><span>多</span></div>
+    </section>
+  </main>
+
   <main id="goalsView" class="hidden">
     <section class="card">
       <div class="section-title"><h2>讀書目標</h2><button class="btn light" style="padding:8px 11px;font-size:13px" id="addGoalBtn2">＋ 新增</button></div>
@@ -84,6 +94,7 @@
 <nav class="nav">
   <button class="active" data-view="timerView">⏱<br>計時</button>
   <button data-view="subjectsView">📚<br>科目</button>
+  <button data-view="calendarView">📅<br>月曆</button>
   <button data-view="goalsView">🎯<br>目標</button>
 </nav>
 
@@ -103,6 +114,8 @@
   </div>
 </dialog>
 
+<dialog id="dayDialog"><div class="modal"><h3 id="dayDetailTitle">讀書紀錄</h3><div class="detail-total" id="dayDetailTotal"></div><div id="dayDetailList"></div><div class="modal-actions"><button class="btn primary" style="min-width:100px" id="closeDay">完成</button></div></div></dialog>
+
 <script>
 const subjects = [
   ['國文','文'],['英文','A'],['數學','∑'],['物理','⚛'],['化學','⚗'],['生物','🧬'],['地科（地球科學）','🌍'],['歷史','🏛'],['地理','🗺'],['公民','⚖']
@@ -111,6 +124,7 @@ const KEY='studytime_v1';
 let state = JSON.parse(localStorage.getItem(KEY) || 'null') || { totals:{}, sessions:[], goals:[], running:null };
 subjects.forEach(([s])=>{ if(state.totals[s]==null) state.totals[s]=0; });
 let tick=null;
+let calCursor=new Date(); calCursor.setDate(1);
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 function save(){localStorage.setItem(KEY,JSON.stringify(state));}
@@ -148,7 +162,14 @@ function goalHTML(g){
   return `<div style="padding:8px 0 14px;border-bottom:1px solid var(--line)"><div class="goal-head"><div><div class="goal-title">${g.subject}</div><div class="goal-meta">${g.deadline} 前完成 ${short(g.targetSeconds)}</div></div><button onclick="removeGoal('${g.id}')" class="btn danger" style="padding:7px 9px;font-size:12px">刪除</button></div><div class="progress"><div style="width:${pct}%"></div></div><div class="goal-foot"><span>${pct}% 完成${expired?' · 已逾期':''}</span><span>剩 ${short(remain)}</span></div></div>`;
 }
 function renderGoals(){ const html=state.goals.length?state.goals.map(goalHTML).join(''):'<div class="empty">還沒有目標，可以設定「幾天內要讀幾小時」。</div>'; $('#goalList').innerHTML=html;$('#goalList2').innerHTML=html; }
-function render(){renderTimer();renderSubjects();renderGoals();}
+function dateLocalKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;}
+function dailyBySubject(key){const out={};state.sessions.filter(x=>x.date===key).forEach(x=>out[x.subject]=(out[x.subject]||0)+x.seconds);if(state.running && dateLocalKey(new Date(state.running.startedAt))===key)out[state.running.subject]=(out[state.running.subject]||0)+runningElapsed();return out;}
+function daySum(key){return Object.values(dailyBySubject(key)).reduce((a,b)=>a+b,0);}
+function dayLabel(sec){if(sec<60)return '<1分';const m=Math.floor(sec/60);if(m<60)return `${m}分`;const h=Math.floor(m/60),r=m%60;return r?`${h}時${r}分`:`${h}小時`;}
+function heat(sec){if(!sec)return '#f7f8fb';const min=sec/60;if(min<30)return '#eef1ff';if(min<60)return '#dce2ff';if(min<120)return '#bdc9ff';if(min<240)return '#91a4fb';return '#667df2';}
+function renderCalendar(){const y=calCursor.getFullYear(),m=calCursor.getMonth();$('#calTitle').textContent=`${y} 年 ${m+1} 月`;const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();let html='';for(let i=0;i<first;i++)html+='<div class="day blank"></div>';for(let d=1;d<=days;d++){const dt=new Date(y,m,d),key=dateLocalKey(dt),sec=daySum(key),today=key===dateLocalKey(new Date());const fg=sec>=240*60?'#fff':'var(--text)';html+=`<button class="day ${sec?'has-time':''} ${today?'today':''}" data-date="${key}" style="background:${heat(sec)};color:${fg}"><span class="num">${d}</span>${sec?`<span class="spent">${dayLabel(sec)}</span>`:''}</button>`;}$('#calendar').innerHTML=html;$$('.day.has-time').forEach(el=>el.onclick=()=>openDay(el.dataset.date));}
+function openDay(key){const parts=key.split('-').map(Number),data=dailyBySubject(key),total=Object.values(data).reduce((a,b)=>a+b,0);$('#dayDetailTitle').textContent=`${parts[1]} 月 ${parts[2]} 日`;$('#dayDetailTotal').textContent=`共讀 ${short(total)}`;$('#dayDetailList').innerHTML=subjects.filter(([s])=>data[s]).map(([s,ic])=>`<div class="detail-row"><b>${ic} ${s}</b><span>${short(data[s])}</span></div>`).join('');$('#dayDialog').showModal();}
+function render(){renderTimer();renderSubjects();renderGoals();renderCalendar();}
 
 $('#startBtn').onclick=()=>{
   if(!state.running){state.running={subject:$('#subjectSelect').value,startedAt:Date.now()};}
@@ -163,7 +184,11 @@ $('#addGoalBtn').onclick=openGoal; $('#addGoalBtn2').onclick=openGoal; $('#cance
 $('#saveGoal').onclick=()=>{const h=Number($('#goalHours').value||0),m=Number($('#goalMinutes').value||0),target=(h*60+m)*60,deadline=$('#goalDeadline').value;if(target<=0||!deadline){alert('請輸入目標時間與期限');return;}state.goals.unshift({id:crypto.randomUUID(),subject:$('#goalSubject').value,targetSeconds:target,deadline,createdAt:Date.now()});save();$('#goalDialog').close();render();};
 window.removeGoal=id=>{state.goals=state.goals.filter(g=>g.id!==id);save();render();};
 
-$$('.nav button').forEach(btn=>btn.onclick=()=>{$$('.nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['timerView','subjectsView','goalsView'].forEach(v=>$('#'+v).classList.add('hidden'));$('#'+btn.dataset.view).classList.remove('hidden');render();});
+$$('.nav button').forEach(btn=>btn.onclick=()=>{$$('.nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['timerView','subjectsView','calendarView','goalsView'].forEach(v=>$('#'+v).classList.add('hidden'));$('#'+btn.dataset.view).classList.remove('hidden');render();});
+
+$('#prevMonth').onclick=()=>{calCursor.setMonth(calCursor.getMonth()-1);renderCalendar();};
+$('#nextMonth').onclick=()=>{calCursor.setMonth(calCursor.getMonth()+1);renderCalendar();};
+$('#closeDay').onclick=()=>$('#dayDialog').close();
 
 $('#todayDate').textContent=new Intl.DateTimeFormat('zh-TW',{month:'numeric',day:'numeric',weekday:'short'}).format(new Date());
 initSelects();render();tick=setInterval(render,1000);
