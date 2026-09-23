@@ -59,19 +59,34 @@
       .nav{width:auto;min-width:520px;padding:8px 12px;bottom:18px}.nav button{min-width:108px;font-size:13px;padding:10px 18px}
       dialog{max-width:560px}
     }
+  
+    /* V1.5 — daily goal, streak and subject quick stats */
+    .today-extra{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .mini-card{background:#f7f8fc;border-radius:17px;padding:14px}
+    .mini-k{font-size:12px;color:var(--muted)}
+    .mini-v{font-size:18px;font-weight:850;margin-top:4px}
+    .today-progress{height:8px;background:#e9edf5;border-radius:999px;overflow:hidden;margin-top:9px}
+    .today-progress>div{height:100%;background:linear-gradient(90deg,var(--primary),var(--primary2));border-radius:999px}
+    .quick-subjects{display:flex;gap:7px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
+    .quick-subjects::-webkit-scrollbar{display:none}
+    .quick-chip{white-space:nowrap;border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:750;color:#566078}
+    .quick-chip.active{background:#eef1ff;color:#4f64d8;border-color:#dce2ff}
+    @media (min-width:900px) and (orientation:landscape){.today-extra{grid-template-columns:1fr 1fr}.mini-v{font-size:21px}}
+
   </style>
 </head>
 <body>
 <div class="app">
   <header>
     <div class="brand"><h1>StudyTime</h1><p>把讀書時間累積成看得見的進步</p></div>
-    <div class="badge">V1.4</div>
+    <div class="badge">V1.5</div>
   </header>
 
   <main id="timerView">
     <section class="card">
       <div class="label">正在讀哪一科？</div>
       <select id="subjectSelect"></select>
+      <div class="quick-subjects" id="quickSubjects" style="margin-top:10px"></div>
       <div class="timer-wrap">
         <div class="timer" id="timer">00:00:00</div>
         <div class="current" id="timerHint">按開始後就會累計到所選科目</div>
@@ -86,6 +101,10 @@
       <div class="summary">
         <div class="metric"><div class="k">今日讀書</div><div class="v" id="todayTotal">0 分鐘</div></div>
         <div class="metric"><div class="k">累積總時數</div><div class="v" id="allTotal">0 小時</div></div>
+      </div>
+      <div class="today-extra">
+        <div class="mini-card"><div class="mini-k">今日目標</div><div class="mini-v"><span id="dailyGoalText">2 小時</span> · <span id="dailyGoalPct">0%</span></div><div class="today-progress"><div id="dailyGoalBar" style="width:0%"></div></div></div>
+        <div class="mini-card"><div class="mini-k">連續有讀書</div><div class="mini-v" id="streakText">0 天 🔥</div></div>
       </div>
     </section>
 
@@ -151,6 +170,8 @@ const subjects = [
 const KEY='studytime_v1';
 let state = JSON.parse(localStorage.getItem(KEY) || 'null') || { totals:{}, sessions:[], goals:[], running:null };
 subjects.forEach(([s])=>{ if(state.totals[s]==null) state.totals[s]=0; });
+if(!state.settings) state.settings={};
+if(!state.settings.dailyGoalSeconds) state.settings.dailyGoalSeconds=7200;
 let tick=null;
 let calCursor=new Date(); calCursor.setDate(1);
 
@@ -203,6 +224,30 @@ function initSelects(){
   ['#subjectSelect','#goalSubject'].forEach(id=>{$(id).innerHTML=subjects.map(([s])=>`<option>${s}</option>`).join('')});
   const tomorrow=new Date(Date.now()+86400000); $('#goalDeadline').value=tomorrow.toISOString().slice(0,10);
 }
+function streakDays(){
+  const days=new Set(state.sessions.filter(x=>x.seconds>0).map(x=>x.date));
+  if(todayTotal()>0)days.add(todayKey());
+  let d=new Date(),n=0;
+  if(!days.has(dateLocalKey(d))){d.setDate(d.getDate()-1);}
+  while(days.has(dateLocalKey(d))){n++;d.setDate(d.getDate()-1);}
+  return n;
+}
+function renderDailyExtras(){
+  const goal=state.settings.dailyGoalSeconds||7200;
+  const cur=todayTotal(),pct=Math.min(100,Math.floor(cur/goal*100));
+  $('#dailyGoalText').textContent=short(goal);
+  $('#dailyGoalPct').textContent=pct+'%';
+  $('#dailyGoalBar').style.width=pct+'%';
+  $('#streakText').textContent=streakDays()+' 天 🔥';
+}
+function renderQuickSubjects(){
+  const selected=$('#subjectSelect').value;
+  $('#quickSubjects').innerHTML=subjects.map(([s])=>`<button class="quick-chip ${s===selected?'active':''}" data-subject="${s}">${s} · ${dayLabel(todaySubjectTotal(s))}</button>`).join('');
+  $$('#quickSubjects .quick-chip').forEach(b=>b.onclick=()=>{
+    $('#subjectSelect').value=b.dataset.subject;
+    $('#subjectSelect').dispatchEvent(new Event('change'));
+  });
+}
 function renderTimer(){
   const running=!!state.running;
   const selected=$('#subjectSelect').value;
@@ -235,7 +280,7 @@ function dayLabel(sec){if(sec<60)return '<1分';const m=Math.floor(sec/60);if(m<
 function heat(sec){if(!sec)return '#f7f8fb';const min=sec/60;if(min<30)return '#eef1ff';if(min<60)return '#dce2ff';if(min<120)return '#bdc9ff';if(min<240)return '#91a4fb';return '#667df2';}
 function renderCalendar(){const y=calCursor.getFullYear(),m=calCursor.getMonth();$('#calTitle').textContent=`${y} 年 ${m+1} 月`;const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();let html='';for(let i=0;i<first;i++)html+='<div class="day blank"></div>';for(let d=1;d<=days;d++){const dt=new Date(y,m,d),key=dateLocalKey(dt),sec=daySum(key),today=key===dateLocalKey(new Date());const fg=sec>=240*60?'#fff':'var(--text)';html+=`<button class="day ${sec?'has-time':''} ${today?'today':''}" data-date="${key}" style="background:${heat(sec)};color:${fg}"><span class="num">${d}</span>${sec?`<span class="spent">${dayLabel(sec)}</span>`:''}</button>`;}$('#calendar').innerHTML=html;$$('.day.has-time').forEach(el=>el.onclick=()=>openDay(el.dataset.date));}
 function openDay(key){const parts=key.split('-').map(Number),data=dailyBySubject(key),total=Object.values(data).reduce((a,b)=>a+b,0);$('#dayDetailTitle').textContent=`${parts[1]} 月 ${parts[2]} 日`;$('#dayDetailTotal').textContent=`共讀 ${short(total)}`;$('#dayDetailList').innerHTML=subjects.filter(([s])=>data[s]).map(([s,ic])=>`<div class="detail-row"><b>${ic} ${s}</b><span>${short(data[s])}</span></div>`).join('');$('#dayDialog').showModal();}
-function render(){renderTimer();renderSubjects();renderGoals();renderCalendar();}
+function render(){renderTimer();renderDailyExtras();renderQuickSubjects();renderSubjects();renderGoals();renderCalendar();}
 
 $('#startBtn').onclick=()=>{
   if(!state.running){state.running={subject:$('#subjectSelect').value,startedAt:Date.now()};}
