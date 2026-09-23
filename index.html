@@ -56,7 +56,7 @@
       .weekdays,.calendar{gap:9px}.weekdays div{font-size:13px;padding:8px 0}
       .day{aspect-ratio:1.28;border-radius:17px;padding:10px 7px;gap:8px}.day .num{font-size:14px}.day .spent{font-size:12px}
       .legend{font-size:12px;margin-top:16px}.legend i{width:24px;height:12px}
-      .nav{width:auto;min-width:520px;padding:8px 12px;bottom:18px}.nav button{min-width:108px;font-size:13px;padding:10px 18px}
+      .nav{width:auto;min-width:620px;padding:8px 12px;bottom:18px}.nav button{min-width:108px;font-size:13px;padding:10px 18px}
       dialog{max-width:560px}
     }
   
@@ -73,13 +73,35 @@
     .quick-chip.active{background:#eef1ff;color:#4f64d8;border-color:#dce2ff}
     @media (min-width:900px) and (orientation:landscape){.today-extra{grid-template-columns:1fr 1fr}.mini-v{font-size:21px}}
 
+  
+    /* V1.6 — statistics */
+    .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .stat-card{background:#f7f8fc;border-radius:17px;padding:14px}
+    .stat-card .k{font-size:12px;color:var(--muted)}
+    .stat-card .v{font-size:22px;font-weight:850;margin-top:4px}
+    .week-chart{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:190px;padding-top:18px}
+    .week-col{height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px}
+    .week-value{font-size:9px;color:var(--muted);min-height:12px}
+    .week-bar-wrap{height:130px;width:100%;display:flex;align-items:flex-end;justify-content:center}
+    .week-bar{width:min(30px,70%);min-height:3px;background:linear-gradient(180deg,var(--primary2),var(--primary));border-radius:9px 9px 4px 4px}
+    .week-label{font-size:11px;font-weight:750;color:#657087}
+    .share-row{display:grid;grid-template-columns:82px 1fr 58px;gap:10px;align-items:center;padding:9px 0}
+    .share-name{font-size:13px;font-weight:800}
+    .share-track{height:9px;background:#edf0f5;border-radius:999px;overflow:hidden}
+    .share-fill{height:100%;background:linear-gradient(90deg,var(--primary),var(--primary2));border-radius:999px}
+    .share-time{text-align:right;font-size:12px;font-weight:800}
+    @media (min-width:900px) and (orientation:landscape){
+      #statsView:not(.hidden){max-width:1180px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+      #statsView .card:first-child{grid-column:1/-1}
+    }
+
   </style>
 </head>
 <body>
 <div class="app">
   <header>
     <div class="brand"><h1>StudyTime</h1><p>把讀書時間累積成看得見的進步</p></div>
-    <div class="badge">V1.5</div>
+    <div class="badge">V1.6</div>
   </header>
 
   <main id="timerView">
@@ -136,6 +158,23 @@
       <div id="goalList2"></div>
     </section>
   </main>
+  <main id="statsView" class="hidden">
+    <section class="card">
+      <div class="section-title"><h2>本週統計</h2><span id="weekRange"></span></div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="k">本週讀書</div><div class="v" id="weekTotal">0 分鐘</div></div>
+        <div class="stat-card"><div class="k">平均每天</div><div class="v" id="weekAverage">0 分鐘</div></div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="section-title"><h2>每日趨勢</h2><span>最近 7 天</span></div>
+      <div class="week-chart" id="weekChart"></div>
+    </section>
+    <section class="card">
+      <div class="section-title"><h2>各科比例</h2><span>最近 7 天</span></div>
+      <div id="subjectShare"></div>
+    </section>
+  </main>
 </div>
 
 <nav class="nav">
@@ -143,6 +182,7 @@
   <button data-view="subjectsView">📚<br>科目</button>
   <button data-view="calendarView">📅<br>月曆</button>
   <button data-view="goalsView">🎯<br>目標</button>
+  <button data-view="statsView">📊<br>統計</button>
 </nav>
 
 <dialog id="goalDialog">
@@ -280,7 +320,36 @@ function dayLabel(sec){if(sec<60)return '<1分';const m=Math.floor(sec/60);if(m<
 function heat(sec){if(!sec)return '#f7f8fb';const min=sec/60;if(min<30)return '#eef1ff';if(min<60)return '#dce2ff';if(min<120)return '#bdc9ff';if(min<240)return '#91a4fb';return '#667df2';}
 function renderCalendar(){const y=calCursor.getFullYear(),m=calCursor.getMonth();$('#calTitle').textContent=`${y} 年 ${m+1} 月`;const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();let html='';for(let i=0;i<first;i++)html+='<div class="day blank"></div>';for(let d=1;d<=days;d++){const dt=new Date(y,m,d),key=dateLocalKey(dt),sec=daySum(key),today=key===dateLocalKey(new Date());const fg=sec>=240*60?'#fff':'var(--text)';html+=`<button class="day ${sec?'has-time':''} ${today?'today':''}" data-date="${key}" style="background:${heat(sec)};color:${fg}"><span class="num">${d}</span>${sec?`<span class="spent">${dayLabel(sec)}</span>`:''}</button>`;}$('#calendar').innerHTML=html;$$('.day.has-time').forEach(el=>el.onclick=()=>openDay(el.dataset.date));}
 function openDay(key){const parts=key.split('-').map(Number),data=dailyBySubject(key),total=Object.values(data).reduce((a,b)=>a+b,0);$('#dayDetailTitle').textContent=`${parts[1]} 月 ${parts[2]} 日`;$('#dayDetailTotal').textContent=`共讀 ${short(total)}`;$('#dayDetailList').innerHTML=subjects.filter(([s])=>data[s]).map(([s,ic])=>`<div class="detail-row"><b>${ic} ${s}</b><span>${short(data[s])}</span></div>`).join('');$('#dayDialog').showModal();}
-function render(){renderTimer();renderDailyExtras();renderQuickSubjects();renderSubjects();renderGoals();renderCalendar();}
+function last7Keys(){
+  const arr=[];const now=new Date();
+  for(let i=6;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i);arr.push(dateLocalKey(d));}
+  return arr;
+}
+function renderStats(){
+  const keys=last7Keys();
+  const vals=keys.map(k=>daySum(k));
+  const total=vals.reduce((a,b)=>a+b,0);
+  $('#weekTotal').textContent=short(total);
+  $('#weekAverage').textContent=short(total/7);
+  const a=keys[0].split('-'),b=keys[6].split('-');
+  $('#weekRange').textContent=`${Number(a[1])}/${Number(a[2])}–${Number(b[1])}/${Number(b[2])}`;
+  const max=Math.max(1,...vals);
+  const wd=['日','一','二','三','四','五','六'];
+  $('#weekChart').innerHTML=keys.map((k,i)=>{
+    const p=k.split('-').map(Number),d=new Date(p[0],p[1]-1,p[2]),sec=vals[i];
+    const pct=Math.max(sec?3:0,sec/max*100);
+    return `<div class="week-col"><div class="week-value">${sec?dayLabel(sec):''}</div><div class="week-bar-wrap"><div class="week-bar" style="height:${pct}%"></div></div><div class="week-label">${wd[d.getDay()]}</div></div>`;
+  }).join('');
+  const by={};subjects.forEach(([s])=>by[s]=0);
+  keys.forEach(k=>{const d=dailyBySubject(k);Object.entries(d).forEach(([s,v])=>by[s]=(by[s]||0)+v);});
+  const subjectTotal=Object.values(by).reduce((a,b)=>a+b,0);
+  const rows=subjects.filter(([s])=>by[s]>0).sort((a,b)=>by[b[0]]-by[a[0]]);
+  $('#subjectShare').innerHTML=rows.length?rows.map(([s])=>{
+    const pct=subjectTotal?Math.round(by[s]/subjectTotal*100):0;
+    return `<div class="share-row"><div class="share-name">${s}</div><div class="share-track"><div class="share-fill" style="width:${pct}%"></div></div><div class="share-time">${pct}%</div></div>`;
+  }).join(''):'<div class="empty">最近 7 天還沒有讀書紀錄。</div>';
+}
+function render(){renderTimer();renderDailyExtras();renderQuickSubjects();renderSubjects();renderGoals();renderCalendar();renderStats();}
 
 $('#startBtn').onclick=()=>{
   if(!state.running){state.running={subject:$('#subjectSelect').value,startedAt:Date.now()};}
@@ -302,7 +371,7 @@ $('#addGoalBtn').onclick=openGoal; $('#addGoalBtn2').onclick=openGoal; $('#cance
 $('#saveGoal').onclick=()=>{const h=Number($('#goalHours').value||0),m=Number($('#goalMinutes').value||0),target=(h*60+m)*60,deadline=$('#goalDeadline').value;if(target<=0||!deadline){alert('請輸入目標時間與期限');return;}state.goals.unshift({id:crypto.randomUUID(),subject:$('#goalSubject').value,targetSeconds:target,deadline,createdAt:Date.now()});save();$('#goalDialog').close();render();};
 window.removeGoal=id=>{state.goals=state.goals.filter(g=>g.id!==id);save();render();};
 
-$$('.nav button').forEach(btn=>btn.onclick=()=>{$$('.nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['timerView','subjectsView','calendarView','goalsView'].forEach(v=>$('#'+v).classList.add('hidden'));$('#'+btn.dataset.view).classList.remove('hidden');render();});
+$$('.nav button').forEach(btn=>btn.onclick=()=>{$$('.nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['timerView','subjectsView','calendarView','goalsView','statsView'].forEach(v=>$('#'+v).classList.add('hidden'));$('#'+btn.dataset.view).classList.remove('hidden');render();});
 
 $('#prevMonth').onclick=()=>{calCursor.setMonth(calCursor.getMonth()-1);renderCalendar();};
 $('#nextMonth').onclick=()=>{calCursor.setMonth(calCursor.getMonth()+1);renderCalendar();};
